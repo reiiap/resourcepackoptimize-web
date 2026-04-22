@@ -130,11 +130,6 @@ body {
   background: linear-gradient(135deg, #5f7dff, #4c63d6);
 }
 
-.btn.secondary {
-  background: rgba(124, 243, 208, 0.15);
-  border-color: rgba(124, 243, 208, 0.4);
-}
-
 .btn.ghost {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.12);
@@ -173,16 +168,35 @@ label {
 }
 
 input[type='text'],
-input[type='range'] {
+input[type='range'],
+select {
   width: 100%;
 }
 
-input[type='text'] {
+input[type='text'],
+select {
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 9px;
   background: rgba(0, 0, 0, 0.22);
   color: var(--text);
   padding: 0.6rem 0.75rem;
+}
+
+.progress-wrap {
+  margin-top: 1rem;
+}
+
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+
+progress {
+  width: 100%;
+  height: 12px;
 }
 
 .stats {
@@ -220,6 +234,10 @@ input[type='text'] {
 
 .status.success {
   color: var(--accent);
+}
+
+code {
+  color: #c9d6ff;
 }
 
 @media (max-width: 720px) {

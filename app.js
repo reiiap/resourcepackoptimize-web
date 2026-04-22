@@ -4,10 +4,12 @@ const state = {
   optimizedBlob: null,
   optimizedName: 'resourcepack-optimized.zip',
   optimizedSize: 0,
-  removedCount: 0,
+  removedShaderFiles: 0,
   dedupedCount: 0,
+  sourceName: '',
 };
 
+const steps = ['import', 'analysis', 'optimization', 'export'];
 const panels = {
   import: document.getElementById('panel-import'),
   analysis: document.getElementById('panel-analysis'),
@@ -22,12 +24,33 @@ const resultGrid = document.getElementById('result-grid');
 const compressionLevelInput = document.getElementById('compression-level');
 const compressionLabel = document.getElementById('compression-label');
 
+const importProgress = {
+  bar: document.getElementById('import-progress'),
+  value: document.getElementById('import-progress-value'),
+  label: document.getElementById('import-progress-label'),
+};
+
+const optimizeProgress = {
+  bar: document.getElementById('optimize-progress'),
+  value: document.getElementById('optimize-progress-value'),
+  label: document.getElementById('optimize-progress-label'),
+};
+
+function setProgress(target, percent, text) {
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  target.bar.value = clamped;
+  target.value.textContent = `${clamped}%`;
+  if (text) {
+    target.label.textContent = text;
+  }
+}
+
 function setStep(step) {
   for (const element of document.querySelectorAll('.steps li')) {
     element.classList.toggle('active', Number(element.dataset.step) === step);
   }
   for (const [key, panel] of Object.entries(panels)) {
-    panel.classList.toggle('hidden', key !== ['import', 'analysis', 'optimization', 'export'][step - 1]);
+    panel.classList.toggle('hidden', key !== steps[step - 1]);
   }
 }
 
@@ -40,11 +63,6 @@ function setStatus(el, text, type = 'muted') {
   el.className = `status ${type}`;
 }
 
-function isRemovableMeta(path) {
-  const lower = path.toLowerCase();
-  return lower.endsWith('.ds_store') || lower.endsWith('thumbs.db') || lower.includes('__macosx/');
-}
-
 function simpleHash(u8) {
   let hash = 2166136261;
   for (let i = 0; i < u8.length; i += 1) {
@@ -54,17 +72,22 @@ function simpleHash(u8) {
   return (hash >>> 0).toString(16);
 }
 
+function isShaderFile(path) {
+  return path.toLowerCase().startsWith('assets/minecraft/shaders/');
+}
+
 function buildStats() {
   const files = [...state.files.values()];
-  const textureCount = files.filter((f) => f.path.startsWith('assets/') && f.path.endsWith('.png')).length;
-  const jsonCount = files.filter((f) => f.path.endsWith('.json') || f.path.endsWith('.mcmeta')).length;
+  const pngCount = files.filter((f) => f.path.endsWith('.png')).length;
+  const oggCount = files.filter((f) => f.path.endsWith('.ogg')).length;
 
   statsGrid.innerHTML = '';
   [
+    ['Sumber', state.sourceName || '-'],
     ['Total File', files.length],
     ['Total Size', bytesToMB(state.originalSize)],
-    ['Texture PNG', textureCount],
-    ['JSON/MCMETA', jsonCount],
+    ['PNG', pngCount],
+    ['OGG', oggCount],
   ].forEach(([k, v]) => {
     const stat = document.createElement('article');
     stat.className = 'stat';
@@ -73,7 +96,46 @@ function buildStats() {
   });
 }
 
-async function loadZipFile(file) {
+async function fetchWithProgress(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const total = Number(response.headers.get('content-length') || 0);
+  const reader = response.body?.getReader();
+
+  if (!reader) {
+    const blob = await response.blob();
+    setProgress(importProgress, 100, 'Download selesai.');
+    return blob;
+  }
+
+  let received = 0;
+  const chunks = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    chunks.push(value);
+    received += value.length;
+
+    if (total > 0) {
+      const percent = (received / total) * 100;
+      setProgress(importProgress, percent, `Mendownload... ${bytesToMB(received)} / ${bytesToMB(total)}`);
+    } else {
+      const pseudo = Math.min(95, Math.floor(received / (1024 * 256)));
+      setProgress(importProgress, pseudo, `Mendownload... ${bytesToMB(received)}`);
+    }
+  }
+
+  setProgress(importProgress, 100, 'Download selesai.');
+  return new Blob(chunks, { type: 'application/zip' });
+}
+
+async function loadZipBlob(blob) {
   if (!window.JSZip) {
     throw new Error('Library JSZip gagal dimuat. Cek koneksi internet untuk CDN.');
   }
@@ -81,39 +143,37 @@ async function loadZipFile(file) {
   state.files.clear();
   state.originalSize = 0;
 
-  const zip = await JSZip.loadAsync(file);
-  const entries = Object.values(zip.files);
-  for (const entry of entries) {
-    if (entry.dir) {
-      continue;
-    }
+  const zip = await JSZip.loadAsync(blob);
+  const entries = Object.values(zip.files).filter((e) => !e.dir);
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
     const bytes = await entry.async('uint8array');
-    state.files.set(entry.name, {
-      path: entry.name,
-      bytes,
-      size: bytes.byteLength,
-      source: 'zip',
-    });
+    state.files.set(entry.name, { path: entry.name, bytes });
     state.originalSize += bytes.byteLength;
+
+    const percent = ((i + 1) / entries.length) * 100;
+    setProgress(importProgress, percent, `Menganalisis ZIP... ${i + 1}/${entries.length}`);
   }
 }
 
-async function loadFolderFiles(fileList) {
-  state.files.clear();
-  state.originalSize = 0;
+async function loadFromLink() {
+  const rawUrl = document.getElementById('url-input').value.trim();
+  const corsPrefix = document.getElementById('cors-prefix').value.trim();
 
-  for (const file of fileList) {
-    const path = file.webkitRelativePath || file.name;
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    state.files.set(path, {
-      path,
-      bytes,
-      size: bytes.byteLength,
-      source: 'folder',
-    });
-    state.originalSize += bytes.byteLength;
+  if (!rawUrl) {
+    throw new Error('Link ZIP wajib diisi.');
   }
+
+  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+  const sourceUrl = corsPrefix ? `${corsPrefix}${url}` : url;
+
+  setProgress(importProgress, 2, 'Mulai download dari link...');
+  const zipBlob = await fetchWithProgress(sourceUrl);
+  await loadZipBlob(zipBlob);
+
+  const sourceName = url.split('/').pop() || 'remote-pack.zip';
+  state.sourceName = sourceName;
 }
 
 async function loadDemoPack() {
@@ -122,30 +182,34 @@ async function loadDemoPack() {
 
   const encoder = new TextEncoder();
   const demoEntries = [
-    ['pack.mcmeta', '{ "pack": {"pack_format": 34, "description": "demo   pack"}}'],
-    ['assets/minecraft/models/block/stone.json', '{  "parent": "block/cube_all"  }'],
-    ['assets/minecraft/lang/en_us.json', '{ "block.minecraft.stone": "Stone" }'],
-    ['assets/minecraft/textures/block/placeholder.png', encoder.encode('PNGDEMO')],
-    ['.DS_Store', 'ignore me'],
+    ['pack.mcmeta', '{"pack":{"pack_format":34,"description":"demo"}}'],
+    ['assets/minecraft/textures/block/stone.png', encoder.encode('PNG_DEMO_TEXTURE')],
+    ['assets/minecraft/sounds/entity/allay/death.ogg', encoder.encode('OGG_DEMO')],
+    ['assets/minecraft/shaders/core/fog.fsh', 'shader file'],
   ];
 
-  for (const [path, content] of demoEntries) {
+  for (let i = 0; i < demoEntries.length; i += 1) {
+    const [path, content] = demoEntries[i];
     const bytes = content instanceof Uint8Array ? content : encoder.encode(content);
-    state.files.set(path, { path, bytes, size: bytes.byteLength, source: 'demo' });
+    state.files.set(path, { path, bytes });
     state.originalSize += bytes.byteLength;
+    setProgress(importProgress, ((i + 1) / demoEntries.length) * 100, `Muat demo... ${i + 1}/${demoEntries.length}`);
   }
+
+  state.sourceName = 'demo-pack';
 }
 
-function renderResult(before, after) {
+function renderResult(before, after, profileMode) {
   const savedBytes = Math.max(before - after, 0);
   const ratio = before > 0 ? ((savedBytes / before) * 100).toFixed(2) : '0.00';
 
   resultGrid.innerHTML = '';
   [
+    ['Profil', profileMode === 'audio' ? 'Profile B - Advanced Audio Focus' : 'Profile A - Standard Safe'],
     ['Ukuran Awal', bytesToMB(before)],
     ['Ukuran Akhir', bytesToMB(after)],
     ['Pengurangan', `${bytesToMB(savedBytes)} (${ratio}%)`],
-    ['File Meta Dihapus', state.removedCount],
+    ['Shader Dihapus', state.removedShaderFiles],
     ['File Duplikat Dihapus', state.dedupedCount],
   ].forEach(([k, v]) => {
     const stat = document.createElement('article');
@@ -153,23 +217,6 @@ function renderResult(before, after) {
     stat.innerHTML = `<p class="k">${k}</p><p class="v">${v}</p>`;
     resultGrid.appendChild(stat);
   });
-}
-
-function minifyTextFile(path, bytes) {
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  const text = decoder.decode(bytes);
-
-  if (path.endsWith('.json') || path.endsWith('.mcmeta')) {
-    try {
-      const parsed = JSON.parse(text);
-      return encoder.encode(JSON.stringify(parsed));
-    } catch {
-      return bytes;
-    }
-  }
-
-  return bytes;
 }
 
 async function optimizePack() {
@@ -180,39 +227,47 @@ async function optimizePack() {
     throw new Error('JSZip tidak tersedia.');
   }
 
-  state.removedCount = 0;
+  state.removedShaderFiles = 0;
   state.dedupedCount = 0;
 
-  const removeMeta = document.getElementById('remove-meta').checked;
+  const removeShaders = document.getElementById('remove-shaders').checked;
   const dedupe = document.getElementById('dedupe').checked;
-  const flattenWhitespace = document.getElementById('flatten-whitespace').checked;
   const compressionLevel = Number(compressionLevelInput.value);
+  const profileMode = document.getElementById('profile-mode').value;
 
   const hashMap = new Map();
   const outputZip = new JSZip();
+  const files = [...state.files.values()];
 
-  for (const file of state.files.values()) {
-    if (removeMeta && isRemovableMeta(file.path)) {
-      state.removedCount += 1;
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+
+    if (removeShaders && isShaderFile(file.path)) {
+      state.removedShaderFiles += 1;
+      setProgress(optimizeProgress, ((i + 1) / files.length) * 100, `Skip shader: ${i + 1}/${files.length}`);
       continue;
     }
 
-    let data = file.bytes;
-    if (flattenWhitespace) {
-      data = minifyTextFile(file.path, data);
-    }
+    const data = file.bytes;
 
     if (dedupe) {
       const hash = `${data.byteLength}-${simpleHash(data)}`;
       if (hashMap.has(hash)) {
         state.dedupedCount += 1;
+        setProgress(optimizeProgress, ((i + 1) / files.length) * 100, `Dedupe: ${i + 1}/${files.length}`);
         continue;
       }
       hashMap.set(hash, file.path);
     }
 
-    outputZip.file(file.path, data);
+    const shouldStore = profileMode === 'audio' && file.path.endsWith('.ogg');
+    outputZip.file(file.path, data, { compression: shouldStore ? 'STORE' : 'DEFLATE' });
+
+    const percent = ((i + 1) / files.length) * 100;
+    setProgress(optimizeProgress, percent, `Optimasi file... ${i + 1}/${files.length}`);
   }
+
+  setProgress(optimizeProgress, 96, 'Finalisasi ZIP...');
 
   const optimizedBlob = await outputZip.generateAsync({
     type: 'blob',
@@ -224,42 +279,42 @@ async function optimizePack() {
   state.optimizedName = `${(nameInput || 'resourcepack-optimized').replace(/\.zip$/i, '')}.zip`;
   state.optimizedBlob = optimizedBlob;
   state.optimizedSize = optimizedBlob.size;
+
+  setProgress(optimizeProgress, 100, 'Optimasi selesai.');
+  return profileMode;
+}
+
+function resetAll() {
+  state.files.clear();
+  state.originalSize = 0;
+  state.optimizedBlob = null;
+  state.optimizedSize = 0;
+  state.sourceName = '';
+
+  setProgress(importProgress, 0, 'Menunggu link...');
+  setProgress(optimizeProgress, 0, 'Menunggu proses optimasi...');
+  setStatus(importStatus, 'Belum ada file yang dimuat.', 'muted');
+  setStatus(optimizeStatus, 'Siap untuk optimasi.', 'muted');
+  setStep(1);
 }
 
 function boot() {
   setStep(1);
+  resetAll();
 
-  document.getElementById('zip-input').addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
+  document.getElementById('fetch-url').addEventListener('click', async () => {
     try {
-      setStatus(importStatus, 'Memproses ZIP...', 'muted');
-      await loadZipFile(file);
+      setStatus(importStatus, 'Mengambil file dari link...', 'muted');
+      await loadFromLink();
       buildStats();
-      setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari ${file.name}.`, 'success');
+      setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari link.`, 'success');
       setStep(2);
     } catch (error) {
-      setStatus(importStatus, `Gagal memuat ZIP: ${error.message}`, 'error');
-    }
-  });
-
-  document.getElementById('folder-input').addEventListener('change', async (event) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    try {
-      setStatus(importStatus, 'Memproses folder...', 'muted');
-      await loadFolderFiles(files);
-      buildStats();
-      setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari folder.`, 'success');
-      setStep(2);
-    } catch (error) {
-      setStatus(importStatus, `Gagal memuat folder: ${error.message}`, 'error');
+      setStatus(
+        importStatus,
+        `Gagal mengambil link: ${error.message}. Coba ubah CORS proxy atau pastikan URL direct zip.`,
+        'error',
+      );
     }
   });
 
@@ -285,8 +340,8 @@ function boot() {
   document.getElementById('run-optimize').addEventListener('click', async () => {
     try {
       setStatus(optimizeStatus, 'Optimasi berjalan...', 'muted');
-      await optimizePack();
-      renderResult(state.originalSize, state.optimizedSize);
+      const profileMode = await optimizePack();
+      renderResult(state.originalSize, state.optimizedSize, profileMode);
       setStatus(optimizeStatus, 'Optimasi selesai tanpa error.', 'success');
       setStep(4);
     } catch (error) {
@@ -302,11 +357,7 @@ function boot() {
   });
 
   document.getElementById('restart-btn').addEventListener('click', () => {
-    state.optimizedBlob = null;
-    state.optimizedSize = 0;
-    setStep(1);
-    setStatus(importStatus, 'Belum ada file yang dipilih.', 'muted');
-    setStatus(optimizeStatus, 'Siap untuk optimasi.', 'muted');
+    resetAll();
   });
 }
 
