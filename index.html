@@ -10,94 +10,96 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="style.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
-    <script src="app.js" defer></script>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script defer src="app.js"></script>
   </head>
   <body>
-    <div class="bg-blur"></div>
-    <main class="app-shell">
-      <header class="hero">
+    <div class="aurora"></div>
+    <main class="app">
+      <header class="hero card">
         <p class="badge">ReiiKajurawa Development</p>
         <h1>Optimize Resourcepack</h1>
-        <p class="hero-subtitle">
-          Platform optimasi resourcepack full berbasis website: upload, analisa, optimasi, dan download hasil akhir tanpa install tool lokal.
+        <p>
+          Sistem web end-to-end untuk optimasi texture pack Minecraft: upload, analisis,
+          optimasi terukur, hingga download hasil akhir.
         </p>
       </header>
 
-      <section class="card steps-card">
-        <ol class="stepper" id="stepper">
-          <li class="step active">1. Upload</li>
-          <li class="step">2. Analisa</li>
-          <li class="step">3. Konfigurasi</li>
-          <li class="step">4. Optimasi</li>
-          <li class="step">5. Download</li>
+      <section class="workflow card">
+        <ol class="steps">
+          <li data-step="1" class="active">1. Import</li>
+          <li data-step="2">2. Analisis</li>
+          <li data-step="3">3. Optimasi</li>
+          <li data-step="4">4. Export</li>
         </ol>
-      </section>
 
-      <section class="card grid-two">
-        <article>
-          <h2>Input Resourcepack</h2>
-          <p class="muted">Upload file <strong>.zip</strong> resourcepack kamu untuk diproses penuh di browser.</p>
-          <div class="dropzone" id="dropzone">
-            <input id="zipInput" type="file" accept=".zip" hidden />
-            <button id="pickBtn" class="btn primary">Pilih File ZIP</button>
-            <p id="selectedFile">Belum ada file dipilih.</p>
-            <p class="muted tiny">Atau drag & drop file ZIP ke area ini.</p>
+        <div class="panel" id="panel-import">
+          <h2>Upload Resourcepack</h2>
+          <p>Pilih ZIP resourcepack atau folder langsung dari perangkat kamu.</p>
+          <div class="actions">
+            <label class="btn primary">
+              Pilih File ZIP
+              <input id="zip-input" type="file" accept=".zip" hidden />
+            </label>
+            <label class="btn secondary">
+              Pilih Folder
+              <input id="folder-input" type="file" webkitdirectory directory hidden />
+            </label>
+            <button id="load-demo" class="btn ghost" type="button">Muat Demo Pack</button>
           </div>
-        </article>
-
-        <article>
-          <h2>Ringkasan Paket</h2>
-          <ul class="summary" id="summaryList">
-            <li>Total file: <span>-</span></li>
-            <li>PNG texture: <span>-</span></li>
-            <li>JSON config: <span>-</span></li>
-            <li>Ukuran awal: <span>-</span></li>
-            <li>Estimasi hemat: <span>-</span></li>
-          </ul>
-        </article>
-      </section>
-
-      <section class="card">
-        <h2>Pengaturan Optimasi</h2>
-        <div class="controls">
-          <label>
-            <span>Kualitas texture (JPEG fallback encoder)</span>
-            <input id="quality" type="range" min="0.4" max="1" step="0.05" value="0.85" />
-            <strong id="qualityValue">0.85</strong>
-          </label>
-
-          <label class="checkline">
-            <input id="minifyJson" type="checkbox" checked />
-            <span>Minify semua file JSON</span>
-          </label>
-
-          <label class="checkline">
-            <input id="normalizeTextures" type="checkbox" checked />
-            <span>Normalize texture (hapus metadata + re-encode PNG)</span>
-          </label>
-
-          <label class="checkline">
-            <input id="removeEmpty" type="checkbox" checked />
-            <span>Hapus file kosong / whitespace-only</span>
-          </label>
+          <p id="import-status" class="status muted">Belum ada file yang dipilih.</p>
         </div>
-      </section>
 
-      <section class="card actions">
-        <button id="analyzeBtn" class="btn">Analisa Paket</button>
-        <button id="optimizeBtn" class="btn primary" disabled>Mulai Optimasi</button>
-        <button id="downloadBtn" class="btn success" disabled>Download Hasil</button>
-      </section>
-
-      <section class="card">
-        <h2>Status Proses</h2>
-        <div class="progress-wrap">
-          <div id="progressBar"></div>
+        <div class="panel hidden" id="panel-analysis">
+          <h2>Analisis Resourcepack</h2>
+          <div class="stats" id="stats-grid"></div>
+          <div class="actions">
+            <button id="to-optimization" class="btn primary" type="button">Lanjut ke Optimasi</button>
+          </div>
         </div>
-        <p id="statusText" class="muted">Menunggu input resourcepack...</p>
-        <pre id="logPanel"></pre>
+
+        <div class="panel hidden" id="panel-optimization">
+          <h2>Pengaturan Optimasi</h2>
+          <div class="form-grid">
+            <label class="toggle">
+              <input type="checkbox" id="remove-meta" checked />
+              Hapus file metadata tidak penting (.DS_Store, thumbs.db)
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="dedupe" checked />
+              Deduplikasi file identik
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="flatten-whitespace" checked />
+              Rapikan whitespace pada JSON/MCMETA
+            </label>
+            <label>
+              Level kompresi ZIP
+              <input id="compression-level" type="range" min="1" max="9" step="1" value="7" />
+              <span id="compression-label">7</span>
+            </label>
+            <label>
+              Nama output
+              <input id="output-name" type="text" value="resourcepack-optimized" />
+            </label>
+          </div>
+          <div class="actions">
+            <button id="run-optimize" class="btn primary" type="button">Mulai Optimasi</button>
+            <button id="back-analysis" class="btn ghost" type="button">Kembali</button>
+          </div>
+          <p id="optimize-status" class="status muted">Siap untuk optimasi.</p>
+        </div>
+
+        <div class="panel hidden" id="panel-export">
+          <h2>Hasil Export</h2>
+          <div class="stats" id="result-grid"></div>
+          <div class="actions">
+            <button id="download-btn" class="btn primary" type="button">Download Hasil</button>
+            <button id="restart-btn" class="btn ghost" type="button">Optimasi Ulang</button>
+          </div>
+        </div>
       </section>
     </main>
   </body>

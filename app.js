@@ -1,276 +1,313 @@
 const state = {
-  zipFile: null,
-  sourceZip: null,
+  files: new Map(),
+  originalSize: 0,
   optimizedBlob: null,
-  stats: {
-    total: 0,
-    png: 0,
-    json: 0,
-    inputBytes: 0,
-    outputBytes: 0,
-  },
+  optimizedName: 'resourcepack-optimized.zip',
+  optimizedSize: 0,
+  removedCount: 0,
+  dedupedCount: 0,
 };
 
-const $ = (id) => document.getElementById(id);
-const els = {
-  zipInput: $("zipInput"),
-  pickBtn: $("pickBtn"),
-  dropzone: $("dropzone"),
-  selectedFile: $("selectedFile"),
-  analyzeBtn: $("analyzeBtn"),
-  optimizeBtn: $("optimizeBtn"),
-  downloadBtn: $("downloadBtn"),
-  summaryList: $("summaryList"),
-  progressBar: $("progressBar"),
-  statusText: $("statusText"),
-  logPanel: $("logPanel"),
-  quality: $("quality"),
-  qualityValue: $("qualityValue"),
-  minifyJson: $("minifyJson"),
-  normalizeTextures: $("normalizeTextures"),
-  removeEmpty: $("removeEmpty"),
-  stepper: $("stepper"),
+const panels = {
+  import: document.getElementById('panel-import'),
+  analysis: document.getElementById('panel-analysis'),
+  optimization: document.getElementById('panel-optimization'),
+  export: document.getElementById('panel-export'),
 };
 
-function updateStep(stepIndex) {
-  [...els.stepper.children].forEach((child, idx) => {
-    child.classList.toggle("active", idx <= stepIndex);
+const importStatus = document.getElementById('import-status');
+const optimizeStatus = document.getElementById('optimize-status');
+const statsGrid = document.getElementById('stats-grid');
+const resultGrid = document.getElementById('result-grid');
+const compressionLevelInput = document.getElementById('compression-level');
+const compressionLabel = document.getElementById('compression-label');
+
+function setStep(step) {
+  for (const element of document.querySelectorAll('.steps li')) {
+    element.classList.toggle('active', Number(element.dataset.step) === step);
+  }
+  for (const [key, panel] of Object.entries(panels)) {
+    panel.classList.toggle('hidden', key !== ['import', 'analysis', 'optimization', 'export'][step - 1]);
+  }
+}
+
+function bytesToMB(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function setStatus(el, text, type = 'muted') {
+  el.textContent = text;
+  el.className = `status ${type}`;
+}
+
+function isRemovableMeta(path) {
+  const lower = path.toLowerCase();
+  return lower.endsWith('.ds_store') || lower.endsWith('thumbs.db') || lower.includes('__macosx/');
+}
+
+function simpleHash(u8) {
+  let hash = 2166136261;
+  for (let i = 0; i < u8.length; i += 1) {
+    hash ^= u8[i];
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function buildStats() {
+  const files = [...state.files.values()];
+  const textureCount = files.filter((f) => f.path.startsWith('assets/') && f.path.endsWith('.png')).length;
+  const jsonCount = files.filter((f) => f.path.endsWith('.json') || f.path.endsWith('.mcmeta')).length;
+
+  statsGrid.innerHTML = '';
+  [
+    ['Total File', files.length],
+    ['Total Size', bytesToMB(state.originalSize)],
+    ['Texture PNG', textureCount],
+    ['JSON/MCMETA', jsonCount],
+  ].forEach(([k, v]) => {
+    const stat = document.createElement('article');
+    stat.className = 'stat';
+    stat.innerHTML = `<p class="k">${k}</p><p class="v">${v}</p>`;
+    statsGrid.appendChild(stat);
   });
 }
 
-function log(message) {
-  const now = new Date().toLocaleTimeString("id-ID", { hour12: false });
-  els.logPanel.textContent += `[${now}] ${message}\n`;
-  els.logPanel.scrollTop = els.logPanel.scrollHeight;
-}
+async function loadZipFile(file) {
+  if (!window.JSZip) {
+    throw new Error('Library JSZip gagal dimuat. Cek koneksi internet untuk CDN.');
+  }
 
-function updateStatus(text, progress = null) {
-  els.statusText.textContent = text;
-  if (progress !== null) {
-    els.progressBar.style.width = `${Math.max(0, Math.min(progress, 100))}%`;
+  state.files.clear();
+  state.originalSize = 0;
+
+  const zip = await JSZip.loadAsync(file);
+  const entries = Object.values(zip.files);
+  for (const entry of entries) {
+    if (entry.dir) {
+      continue;
+    }
+    const bytes = await entry.async('uint8array');
+    state.files.set(entry.name, {
+      path: entry.name,
+      bytes,
+      size: bytes.byteLength,
+      source: 'zip',
+    });
+    state.originalSize += bytes.byteLength;
   }
 }
 
-function formatBytes(bytes) {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let value = bytes;
-  while (value >= 1024 && i < units.length - 1) {
-    value /= 1024;
-    i += 1;
+async function loadFolderFiles(fileList) {
+  state.files.clear();
+  state.originalSize = 0;
+
+  for (const file of fileList) {
+    const path = file.webkitRelativePath || file.name;
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    state.files.set(path, {
+      path,
+      bytes,
+      size: bytes.byteLength,
+      source: 'folder',
+    });
+    state.originalSize += bytes.byteLength;
   }
-  return `${value.toFixed(value < 10 && i > 0 ? 2 : 1)} ${units[i]}`;
 }
 
-function refreshSummary(estimatedSavings = null) {
-  const savings =
-    estimatedSavings ??
-    Math.max(0, (state.stats.inputBytes - state.stats.outputBytes) / Math.max(state.stats.inputBytes, 1));
+async function loadDemoPack() {
+  state.files.clear();
+  state.originalSize = 0;
 
-  const rows = [
-    `Total file: <span>${state.stats.total || "-"}</span>`,
-    `PNG texture: <span>${state.stats.png || "-"}</span>`,
-    `JSON config: <span>${state.stats.json || "-"}</span>`,
-    `Ukuran awal: <span>${formatBytes(state.stats.inputBytes)}</span>`,
-    `Estimasi hemat: <span>${(savings * 100).toFixed(1)}%</span>`,
+  const encoder = new TextEncoder();
+  const demoEntries = [
+    ['pack.mcmeta', '{ "pack": {"pack_format": 34, "description": "demo   pack"}}'],
+    ['assets/minecraft/models/block/stone.json', '{  "parent": "block/cube_all"  }'],
+    ['assets/minecraft/lang/en_us.json', '{ "block.minecraft.stone": "Stone" }'],
+    ['assets/minecraft/textures/block/placeholder.png', encoder.encode('PNGDEMO')],
+    ['.DS_Store', 'ignore me'],
   ];
 
-  els.summaryList.innerHTML = rows.map((r) => `<li>${r}</li>`).join("");
-}
-
-async function readZipFile(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  state.sourceZip = await JSZip.loadAsync(arrayBuffer);
-}
-
-async function analyzeZip() {
-  if (!state.sourceZip) {
-    updateStatus("Pilih file ZIP dulu.");
-    return;
-  }
-
-  updateStep(1);
-  updateStatus("Menganalisa isi resourcepack...", 12);
-  log("Memulai analisa ZIP...");
-
-  const entries = Object.values(state.sourceZip.files).filter((entry) => !entry.dir);
-  state.stats.total = entries.length;
-  state.stats.png = entries.filter((entry) => /\.png$/i.test(entry.name)).length;
-  state.stats.json = entries.filter((entry) => /\.json$/i.test(entry.name)).length;
-
-  state.stats.inputBytes = 0;
-  for (const entry of entries) {
-    // eslint-disable-next-line no-await-in-loop
-    const data = await entry.async("uint8array");
-    state.stats.inputBytes += data.byteLength;
-  }
-
-  const roughSavings = Math.min(0.62, (state.stats.png * 0.03 + state.stats.json * 0.01 + 0.08));
-  refreshSummary(roughSavings);
-
-  log(`Analisa selesai. File: ${state.stats.total}, PNG: ${state.stats.png}, JSON: ${state.stats.json}`);
-  updateStatus("Analisa selesai. Lanjut konfigurasi dan klik Mulai Optimasi.", 26);
-  updateStep(2);
-  els.optimizeBtn.disabled = false;
-}
-
-function minifyJsonText(text) {
-  try {
-    return JSON.stringify(JSON.parse(text));
-  } catch {
-    return text;
+  for (const [path, content] of demoEntries) {
+    const bytes = content instanceof Uint8Array ? content : encoder.encode(content);
+    state.files.set(path, { path, bytes, size: bytes.byteLength, source: 'demo' });
+    state.originalSize += bytes.byteLength;
   }
 }
 
-async function normalizePng(fileBuffer, quality) {
-  const blob = new Blob([fileBuffer], { type: "image/png" });
-  const bitmap = await createImageBitmap(blob);
-  const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const ctx = canvas.getContext("2d", { alpha: true });
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(bitmap, 0, 0);
+function renderResult(before, after) {
+  const savedBytes = Math.max(before - after, 0);
+  const ratio = before > 0 ? ((savedBytes / before) * 100).toFixed(2) : '0.00';
 
-  const outBlob = await new Promise((resolve) => {
-    canvas.toBlob((encoded) => resolve(encoded), "image/png", quality);
+  resultGrid.innerHTML = '';
+  [
+    ['Ukuran Awal', bytesToMB(before)],
+    ['Ukuran Akhir', bytesToMB(after)],
+    ['Pengurangan', `${bytesToMB(savedBytes)} (${ratio}%)`],
+    ['File Meta Dihapus', state.removedCount],
+    ['File Duplikat Dihapus', state.dedupedCount],
+  ].forEach(([k, v]) => {
+    const stat = document.createElement('article');
+    stat.className = 'stat';
+    stat.innerHTML = `<p class="k">${k}</p><p class="v">${v}</p>`;
+    resultGrid.appendChild(stat);
   });
-
-  return new Uint8Array(await outBlob.arrayBuffer());
 }
 
-async function optimizeZip() {
-  if (!state.sourceZip) return;
+function minifyTextFile(path, bytes) {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const text = decoder.decode(bytes);
 
-  const quality = Number(els.quality.value);
-  const minifyJson = els.minifyJson.checked;
-  const normalizeTextures = els.normalizeTextures.checked;
-  const removeEmpty = els.removeEmpty.checked;
+  if (path.endsWith('.json') || path.endsWith('.mcmeta')) {
+    try {
+      const parsed = JSON.parse(text);
+      return encoder.encode(JSON.stringify(parsed));
+    } catch {
+      return bytes;
+    }
+  }
 
-  updateStep(3);
-  updateStatus("Optimasi dimulai...", 30);
-  log("Optimasi dimulai dengan konfigurasi aktif.");
+  return bytes;
+}
 
+async function optimizePack() {
+  if (state.files.size === 0) {
+    throw new Error('Belum ada resourcepack yang dimuat.');
+  }
+  if (!window.JSZip) {
+    throw new Error('JSZip tidak tersedia.');
+  }
+
+  state.removedCount = 0;
+  state.dedupedCount = 0;
+
+  const removeMeta = document.getElementById('remove-meta').checked;
+  const dedupe = document.getElementById('dedupe').checked;
+  const flattenWhitespace = document.getElementById('flatten-whitespace').checked;
+  const compressionLevel = Number(compressionLevelInput.value);
+
+  const hashMap = new Map();
   const outputZip = new JSZip();
-  const entries = Object.values(state.sourceZip.files).filter((entry) => !entry.dir);
 
-  let processed = 0;
-  state.stats.outputBytes = 0;
-
-  for (const entry of entries) {
-    // eslint-disable-next-line no-await-in-loop
-    const raw = await entry.async("uint8array");
-    let outData = raw;
-
-    if (removeEmpty && raw.byteLength === 0) {
-      log(`Skip file kosong: ${entry.name}`);
-      processed += 1;
-      updateStatus(`Memproses... ${processed}/${entries.length}`, 30 + (processed / entries.length) * 60);
+  for (const file of state.files.values()) {
+    if (removeMeta && isRemovableMeta(file.path)) {
+      state.removedCount += 1;
       continue;
     }
 
-    if (/\.json$/i.test(entry.name) && minifyJson) {
-      const text = new TextDecoder().decode(raw);
-      const minified = minifyJsonText(text);
-      outData = new TextEncoder().encode(minified);
-      log(`Minify JSON: ${entry.name}`);
-    } else if (/\.png$/i.test(entry.name) && normalizeTextures) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        outData = await normalizePng(raw, quality);
-        log(`Normalize texture: ${entry.name}`);
-      } catch {
-        log(`Gagal normalize (pakai file asli): ${entry.name}`);
-      }
+    let data = file.bytes;
+    if (flattenWhitespace) {
+      data = minifyTextFile(file.path, data);
     }
 
-    if (removeEmpty && outData.byteLength > 0 && /\.(txt|json|mcmeta|lang)$/i.test(entry.name)) {
-      const plain = new TextDecoder().decode(outData).trim();
-      if (!plain) {
-        log(`Buang file kosong whitespace: ${entry.name}`);
-        processed += 1;
-        updateStatus(`Memproses... ${processed}/${entries.length}`, 30 + (processed / entries.length) * 60);
+    if (dedupe) {
+      const hash = `${data.byteLength}-${simpleHash(data)}`;
+      if (hashMap.has(hash)) {
+        state.dedupedCount += 1;
         continue;
       }
+      hashMap.set(hash, file.path);
     }
 
-    outputZip.file(entry.name, outData);
-    state.stats.outputBytes += outData.byteLength;
-
-    processed += 1;
-    updateStatus(`Memproses... ${processed}/${entries.length}`, 30 + (processed / entries.length) * 60);
+    outputZip.file(file.path, data);
   }
 
-  state.optimizedBlob = await outputZip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 9 } });
-
-  refreshSummary();
-  updateStep(4);
-  updateStatus("Optimasi selesai. File siap di-download.", 100);
-  log(`Optimasi selesai. Ukuran hasil: ${formatBytes(state.optimizedBlob.size)}`);
-  els.downloadBtn.disabled = false;
-}
-
-function downloadResult() {
-  if (!state.optimizedBlob) return;
-  const outName = state.zipFile.name.replace(/\.zip$/i, "") + "-optimized.zip";
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(state.optimizedBlob);
-  link.download = outName;
-  link.click();
-  URL.revokeObjectURL(link.href);
-  updateStatus("Download berhasil dimulai.", 100);
-  log(`Download dijalankan: ${outName}`);
-}
-
-function onFileSelected(file) {
-  if (!file || !/\.zip$/i.test(file.name)) {
-    updateStatus("File harus berformat .zip");
-    return;
-  }
-
-  state.zipFile = file;
-  state.sourceZip = null;
-  state.optimizedBlob = null;
-  els.downloadBtn.disabled = true;
-  els.optimizeBtn.disabled = true;
-  els.selectedFile.textContent = `${file.name} (${formatBytes(file.size)})`;
-  updateStatus("File dipilih. Klik Analisa Paket.", 5);
-  updateStep(0);
-  els.logPanel.textContent = "";
-  log(`File terpilih: ${file.name}`);
-
-  readZipFile(file)
-    .then(() => log("ZIP berhasil dibaca di browser."))
-    .catch((err) => {
-      log(`Gagal membaca ZIP: ${err.message}`);
-      updateStatus("Gagal membaca ZIP. Coba file lain.", 0);
-    });
-}
-
-function wireEvents() {
-  els.pickBtn.addEventListener("click", () => els.zipInput.click());
-  els.zipInput.addEventListener("change", (event) => onFileSelected(event.target.files[0]));
-
-  els.dropzone.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    els.dropzone.classList.add("dragover");
-  });
-  els.dropzone.addEventListener("dragleave", () => els.dropzone.classList.remove("dragover"));
-  els.dropzone.addEventListener("drop", (event) => {
-    event.preventDefault();
-    els.dropzone.classList.remove("dragover");
-    onFileSelected(event.dataTransfer.files[0]);
+  const optimizedBlob = await outputZip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: compressionLevel },
   });
 
-  els.analyzeBtn.addEventListener("click", analyzeZip);
-  els.optimizeBtn.addEventListener("click", optimizeZip);
-  els.downloadBtn.addEventListener("click", downloadResult);
+  const nameInput = document.getElementById('output-name').value.trim();
+  state.optimizedName = `${(nameInput || 'resourcepack-optimized').replace(/\.zip$/i, '')}.zip`;
+  state.optimizedBlob = optimizedBlob;
+  state.optimizedSize = optimizedBlob.size;
+}
 
-  els.quality.addEventListener("input", () => {
-    els.qualityValue.textContent = Number(els.quality.value).toFixed(2);
+function boot() {
+  setStep(1);
+
+  document.getElementById('zip-input').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setStatus(importStatus, 'Memproses ZIP...', 'muted');
+      await loadZipFile(file);
+      buildStats();
+      setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari ${file.name}.`, 'success');
+      setStep(2);
+    } catch (error) {
+      setStatus(importStatus, `Gagal memuat ZIP: ${error.message}`, 'error');
+    }
+  });
+
+  document.getElementById('folder-input').addEventListener('change', async (event) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    try {
+      setStatus(importStatus, 'Memproses folder...', 'muted');
+      await loadFolderFiles(files);
+      buildStats();
+      setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari folder.`, 'success');
+      setStep(2);
+    } catch (error) {
+      setStatus(importStatus, `Gagal memuat folder: ${error.message}`, 'error');
+    }
+  });
+
+  document.getElementById('load-demo').addEventListener('click', async () => {
+    await loadDemoPack();
+    buildStats();
+    setStatus(importStatus, 'Demo pack berhasil dimuat.', 'success');
+    setStep(2);
+  });
+
+  document.getElementById('to-optimization').addEventListener('click', () => {
+    setStep(3);
+  });
+
+  document.getElementById('back-analysis').addEventListener('click', () => {
+    setStep(2);
+  });
+
+  compressionLevelInput.addEventListener('input', () => {
+    compressionLabel.textContent = compressionLevelInput.value;
+  });
+
+  document.getElementById('run-optimize').addEventListener('click', async () => {
+    try {
+      setStatus(optimizeStatus, 'Optimasi berjalan...', 'muted');
+      await optimizePack();
+      renderResult(state.originalSize, state.optimizedSize);
+      setStatus(optimizeStatus, 'Optimasi selesai tanpa error.', 'success');
+      setStep(4);
+    } catch (error) {
+      setStatus(optimizeStatus, `Optimasi gagal: ${error.message}`, 'error');
+    }
+  });
+
+  document.getElementById('download-btn').addEventListener('click', () => {
+    if (!state.optimizedBlob) {
+      return;
+    }
+    saveAs(state.optimizedBlob, state.optimizedName);
+  });
+
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    state.optimizedBlob = null;
+    state.optimizedSize = 0;
+    setStep(1);
+    setStatus(importStatus, 'Belum ada file yang dipilih.', 'muted');
+    setStatus(optimizeStatus, 'Siap untuk optimasi.', 'muted');
   });
 }
 
-wireEvents();
-refreshSummary();
+boot();

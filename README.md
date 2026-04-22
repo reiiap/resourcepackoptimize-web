@@ -1,25 +1,20 @@
 # ReiiKajurawa Development Optimize Resourcepack
 
-Web app full client-side untuk mengoptimasi resourcepack Minecraft langsung dari browser:
+Aplikasi web full client-side untuk optimasi resourcepack Minecraft dari tahap upload sampai export hasil ZIP.
 
-- Upload ZIP resourcepack
-- Analisa isi file (PNG/JSON/ukuran)
-- Konfigurasi optimasi
-- Optimasi langsung di browser (tanpa backend)
-- Download hasil ZIP optimize
+## Fitur utama
+
+- Import resourcepack dari **ZIP** atau **folder lokal**.
+- Analisis cepat (jumlah file, ukuran total, jumlah texture PNG, jumlah JSON/MCMETA).
+- Optimasi dengan opsi:
+  - Hapus metadata tidak penting (`.DS_Store`, `thumbs.db`, `__MACOSX`).
+  - Deduplikasi file identik.
+  - Minify JSON dan MCMETA.
+  - Atur level kompresi ZIP (1-9).
+- Export hasil langsung di browser tanpa server.
 
 ## Menjalankan
 
-Karena ini static web app, cukup jalankan web server sederhana:
+Buka `index.html` langsung di browser modern.
 
-```bash
-python -m http.server 8080
-```
-
-Lalu buka `http://localhost:8080`.
-
-## Catatan
-
-- Semua proses dilakukan di browser user.
-- Tidak ada upload ke server.
-- Cocok untuk workflow cepat dari tahap awal sampai akhir di website.
+> Catatan: library JSZip dan FileSaver menggunakan CDN.
