@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReiiKajurawa Development Optimize Resourcepack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="aurora"></div>
+    <main class="app">
+      <header class="hero card">
+        <p class="badge">ReiiKajurawa Development</p>
+        <h1>Optimize Resourcepack</h1>
+        <p>
+          Sistem web end-to-end untuk optimasi texture pack Minecraft: upload, analisis,
+          optimasi terukur, hingga download hasil akhir.
+        </p>
+      </header>
+
+      <section class="workflow card">
+        <ol class="steps">
+          <li data-step="1" class="active">1. Import</li>
+          <li data-step="2">2. Analisis</li>
+          <li data-step="3">3. Optimasi</li>
+          <li data-step="4">4. Export</li>
+        </ol>
+
+        <div class="panel" id="panel-import">
+          <h2>Upload Resourcepack</h2>
+          <p>Pilih ZIP resourcepack atau folder langsung dari perangkat kamu.</p>
+          <div class="actions">
+            <label class="btn primary">
+              Pilih File ZIP
+              <input id="zip-input" type="file" accept=".zip" hidden />
+            </label>
+            <label class="btn secondary">
+              Pilih Folder
+              <input id="folder-input" type="file" webkitdirectory directory hidden />
+            </label>
+            <button id="load-demo" class="btn ghost" type="button">Muat Demo Pack</button>
+          </div>
+          <p id="import-status" class="status muted">Belum ada file yang dipilih.</p>
+        </div>
+
+        <div class="panel hidden" id="panel-analysis">
+          <h2>Analisis Resourcepack</h2>
+          <div class="stats" id="stats-grid"></div>
+          <div class="actions">
+            <button id="to-optimization" class="btn primary" type="button">Lanjut ke Optimasi</button>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="panel-optimization">
+          <h2>Pengaturan Optimasi</h2>
+          <div class="form-grid">
+            <label class="toggle">
+              <input type="checkbox" id="remove-meta" checked />
+              Hapus file metadata tidak penting (.DS_Store, thumbs.db)
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="dedupe" checked />
+              Deduplikasi file identik
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="flatten-whitespace" checked />
+              Rapikan whitespace pada JSON/MCMETA
+            </label>
+            <label>
+              Level kompresi ZIP
+              <input id="compression-level" type="range" min="1" max="9" step="1" value="7" />
+              <span id="compression-label">7</span>
+            </label>
+            <label>
+              Nama output
+              <input id="output-name" type="text" value="resourcepack-optimized" />
+            </label>
+          </div>
+          <div class="actions">
+            <button id="run-optimize" class="btn primary" type="button">Mulai Optimasi</button>
+            <button id="back-analysis" class="btn ghost" type="button">Kembali</button>
+          </div>
+          <p id="optimize-status" class="status muted">Siap untuk optimasi.</p>
+        </div>
+
+        <div class="panel hidden" id="panel-export">
+          <h2>Hasil Export</h2>
+          <div class="stats" id="result-grid"></div>
+          <div class="actions">
+            <button id="download-btn" class="btn primary" type="button">Download Hasil</button>
+            <button id="restart-btn" class="btn ghost" type="button">Optimasi Ulang</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
