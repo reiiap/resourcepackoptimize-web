@@ -2,11 +2,16 @@
 
 Aplikasi web full client-side untuk optimasi resourcepack Minecraft berbasis **link URL ZIP**.
 
-## Yang sudah diperbaiki
+## Bugfix terbaru
 
-- Sistem input sekarang pakai **link ZIP** (bukan wajib upload file lokal).
-- Ada **progress bar download** dan **progress bar optimasi** supaya proses tidak terlihat stuck.
-- Workflow 4 tahap tetap tersedia: Link Input → Analisis → Optimasi → Export.
+- Fix bug tombol **Ambil dari Link** yang terlihat tidak merespon.
+- Saat klik tombol sekarang UI langsung update status (`Memulai request...`) dan tombol sementara di-disable agar tidak double click.
+- Ditambahkan retry jalur link otomatis:
+  - via CORS prefix (raw URL)
+  - via CORS prefix (encoded URL)
+  - direct URL
+- Ditambahkan timeout request agar proses tidak menggantung tanpa feedback.
+- Input URL juga bisa jalan dengan tombol **Enter**.
 
 ## Konsep optimasi (mengacu sistem repo)
 
@@ -16,7 +21,7 @@ Aplikasi web full client-side untuk optimasi resourcepack Minecraft berbasis **l
 - Deduplikasi file identik.
 - Pengaturan level kompresi ZIP.
 
-> Catatan: karena ini full di browser, tidak menjalankan `ffmpeg/optipng/advpng` native seperti shell script. Proses tetap aman dan stabil untuk workflow web.
+> Catatan: karena ini full di browser, tidak menjalankan `ffmpeg/optipng/advpng` native seperti shell script.
 
 ## Menjalankan
 

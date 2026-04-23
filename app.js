@@ -23,6 +23,9 @@ const statsGrid = document.getElementById('stats-grid');
 const resultGrid = document.getElementById('result-grid');
 const compressionLevelInput = document.getElementById('compression-level');
 const compressionLabel = document.getElementById('compression-label');
+const fetchButton = document.getElementById('fetch-url');
+const urlInput = document.getElementById('url-input');
+const corsInput = document.getElementById('cors-prefix');
 
 const importProgress = {
   bar: document.getElementById('import-progress'),
@@ -76,6 +79,35 @@ function isShaderFile(path) {
   return path.toLowerCase().startsWith('assets/minecraft/shaders/');
 }
 
+function normalizeUrl(rawUrl) {
+  if (!rawUrl) {
+    return '';
+  }
+
+  const hasProtocol = /^https?:\/\//i.test(rawUrl);
+  return hasProtocol ? rawUrl : `https://${rawUrl}`;
+}
+
+function buildCandidateUrls(url, corsPrefix) {
+  const candidates = [];
+
+  if (corsPrefix) {
+    const prefix = corsPrefix.trim();
+
+    if (prefix.includes('{url}')) {
+      candidates.push(prefix.replace('{url}', encodeURIComponent(url)));
+    }
+
+    const slashPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    candidates.push(`${slashPrefix}${url}`);
+    candidates.push(`${slashPrefix}${encodeURIComponent(url)}`);
+  }
+
+  candidates.push(url);
+
+  return [...new Set(candidates)];
+}
+
 function buildStats() {
   const files = [...state.files.values()];
   const pngCount = files.filter((f) => f.path.endsWith('.png')).length;
@@ -96,43 +128,58 @@ function buildStats() {
   });
 }
 
-async function fetchWithProgress(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} ${response.statusText}`);
-  }
+async function fetchWithProgress(url, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort('timeout');
+  }, timeoutMs);
 
-  const total = Number(response.headers.get('content-length') || 0);
-  const reader = response.body?.getReader();
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
 
-  if (!reader) {
-    const blob = await response.blob();
+    const total = Number(response.headers.get('content-length') || 0);
+    const reader = response.body?.getReader();
+
+    if (!reader) {
+      const blob = await response.blob();
+      setProgress(importProgress, 100, 'Download selesai.');
+      return blob;
+    }
+
+    let received = 0;
+    const chunks = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      chunks.push(value);
+      received += value.length;
+
+      if (total > 0) {
+        const percent = (received / total) * 100;
+        setProgress(importProgress, percent, `Mendownload... ${bytesToMB(received)} / ${bytesToMB(total)}`);
+      } else {
+        const pseudo = Math.min(95, Math.floor(received / (1024 * 256)));
+        setProgress(importProgress, pseudo, `Mendownload... ${bytesToMB(received)}`);
+      }
+    }
+
     setProgress(importProgress, 100, 'Download selesai.');
-    return blob;
-  }
-
-  let received = 0;
-  const chunks = [];
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+    return new Blob(chunks, { type: 'application/zip' });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error(`Request timeout > ${Math.floor(timeoutMs / 1000)} detik`);
     }
-    chunks.push(value);
-    received += value.length;
-
-    if (total > 0) {
-      const percent = (received / total) * 100;
-      setProgress(importProgress, percent, `Mendownload... ${bytesToMB(received)} / ${bytesToMB(total)}`);
-    } else {
-      const pseudo = Math.min(95, Math.floor(received / (1024 * 256)));
-      setProgress(importProgress, pseudo, `Mendownload... ${bytesToMB(received)}`);
-    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  setProgress(importProgress, 100, 'Download selesai.');
-  return new Blob(chunks, { type: 'application/zip' });
 }
 
 async function loadZipBlob(blob) {
@@ -146,6 +193,10 @@ async function loadZipBlob(blob) {
   const zip = await JSZip.loadAsync(blob);
   const entries = Object.values(zip.files).filter((e) => !e.dir);
 
+  if (entries.length === 0) {
+    throw new Error('ZIP kosong atau tidak valid.');
+  }
+
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i];
     const bytes = await entry.async('uint8array');
@@ -158,22 +209,31 @@ async function loadZipBlob(blob) {
 }
 
 async function loadFromLink() {
-  const rawUrl = document.getElementById('url-input').value.trim();
-  const corsPrefix = document.getElementById('cors-prefix').value.trim();
+  const rawUrl = urlInput.value.trim();
+  const corsPrefix = corsInput.value.trim();
 
   if (!rawUrl) {
     throw new Error('Link ZIP wajib diisi.');
   }
 
-  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-  const sourceUrl = corsPrefix ? `${corsPrefix}${url}` : url;
+  const url = normalizeUrl(rawUrl);
+  const candidates = buildCandidateUrls(url, corsPrefix);
+  const errors = [];
 
-  setProgress(importProgress, 2, 'Mulai download dari link...');
-  const zipBlob = await fetchWithProgress(sourceUrl);
-  await loadZipBlob(zipBlob);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    try {
+      setProgress(importProgress, 2, `Coba koneksi ${i + 1}/${candidates.length}...`);
+      const zipBlob = await fetchWithProgress(candidate);
+      await loadZipBlob(zipBlob);
+      state.sourceName = url.split('/').pop() || 'remote-pack.zip';
+      return;
+    } catch (error) {
+      errors.push(`[${i + 1}] ${error.message}`);
+    }
+  }
 
-  const sourceName = url.split('/').pop() || 'remote-pack.zip';
-  state.sourceName = sourceName;
+  throw new Error(`Semua jalur gagal. Detail: ${errors.join(' | ')}`);
 }
 
 async function loadDemoPack() {
@@ -291,6 +351,7 @@ function resetAll() {
   state.optimizedSize = 0;
   state.sourceName = '';
 
+  fetchButton.disabled = false;
   setProgress(importProgress, 0, 'Menunggu link...');
   setProgress(optimizeProgress, 0, 'Menunggu proses optimasi...');
   setStatus(importStatus, 'Belum ada file yang dimuat.', 'muted');
@@ -298,23 +359,33 @@ function resetAll() {
   setStep(1);
 }
 
+async function onFetchUrl() {
+  try {
+    fetchButton.disabled = true;
+    setStatus(importStatus, 'Mengambil file dari link...', 'muted');
+    setProgress(importProgress, 1, 'Memulai request...');
+
+    await loadFromLink();
+    buildStats();
+    setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari link.`, 'success');
+    setStep(2);
+  } catch (error) {
+    setStatus(importStatus, `Gagal mengambil link: ${error.message}`, 'error');
+  } finally {
+    fetchButton.disabled = false;
+  }
+}
+
 function boot() {
   setStep(1);
   resetAll();
 
-  document.getElementById('fetch-url').addEventListener('click', async () => {
-    try {
-      setStatus(importStatus, 'Mengambil file dari link...', 'muted');
-      await loadFromLink();
-      buildStats();
-      setStatus(importStatus, `Berhasil memuat ${state.files.size} file dari link.`, 'success');
-      setStep(2);
-    } catch (error) {
-      setStatus(
-        importStatus,
-        `Gagal mengambil link: ${error.message}. Coba ubah CORS proxy atau pastikan URL direct zip.`,
-        'error',
-      );
+  fetchButton.addEventListener('click', onFetchUrl);
+
+  urlInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onFetchUrl();
     }
   });
 
