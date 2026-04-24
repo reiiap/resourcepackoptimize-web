@@ -1,0 +1,220 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a1020;
+  --bg-soft: #111a2e;
+  --border: #24314d;
+  --text: #f2f6ff;
+  --muted: #9fb0d6;
+  --accent: #5ea2ff;
+  --accent-2: #8f7bff;
+  --success: #13b981;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 20% 10%, #152749, var(--bg));
+  min-height: 100vh;
+}
+
+.bg-blur {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 80% 20%, #2b19641a, transparent 25%),
+    radial-gradient(circle at 30% 80%, #2e5bf91e, transparent 30%);
+  pointer-events: none;
+}
+
+.app-shell {
+  width: min(1100px, 92vw);
+  margin: 2rem auto 3rem;
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  margin-bottom: 1.2rem;
+}
+
+.badge {
+  margin: 0;
+  display: inline-block;
+  background: linear-gradient(90deg, #243f83, #5828a4);
+  border: 1px solid #6c84cc;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+h1 {
+  margin: 0.5rem 0;
+  font-size: clamp(1.6rem, 2.5vw, 2.3rem);
+}
+
+h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+}
+
+.hero-subtitle,
+.muted {
+  color: var(--muted);
+}
+
+.card {
+  background: linear-gradient(165deg, #101a30cc, #0b1324cc);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  backdrop-filter: blur(6px);
+}
+
+.grid-two {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.stepper {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(5, minmax(100px, 1fr));
+}
+
+.step {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-align: center;
+  padding: 0.55rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.step.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: linear-gradient(180deg, #223a67, #172743);
+}
+
+.dropzone {
+  border: 1px dashed #4566a8;
+  border-radius: 12px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.dropzone.dragover {
+  background: #19315e66;
+  border-color: #6f95df;
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: #182642;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  border-color: #588beb;
+  background: linear-gradient(180deg, #2f63c2, #1f4292);
+}
+
+.btn.success {
+  border-color: #33cc98;
+  background: linear-gradient(180deg, #1fa072, #16855f);
+}
+
+.controls {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.controls label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.checkline {
+  display: flex !important;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.summary {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.summary span {
+  color: #d5e4ff;
+  font-weight: 600;
+}
+
+.progress-wrap {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0a1224;
+  margin-bottom: 0.6rem;
+}
+
+#progressBar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.2s;
+}
+
+#logPanel {
+  margin: 0.8rem 0 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #060b17;
+  color: #bcceee;
+  max-height: 230px;
+  overflow: auto;
+  padding: 0.7rem;
+  font-size: 0.81rem;
+  line-height: 1.45;
+}
+
+.tiny {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .stepper {
+    grid-template-columns: 1fr;
+  }
+}
