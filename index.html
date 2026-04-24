@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReiiKajurawa Development Optimize Resourcepack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="aurora"></div>
+    <main class="app">
+      <header class="hero card">
+        <p class="badge">ReiiKajurawa Development</p>
+        <h1>Optimize Resourcepack</h1>
+        <p>
+          Sistem full website dengan metode <strong>link-based</strong> untuk proses upload URL → analisis
+          → optimasi → download hasil.
+        </p>
+      </header>
+
+      <section class="workflow card">
+        <ol class="steps">
+          <li data-step="1" class="active">1. Link Input</li>
+          <li data-step="2">2. Analisis</li>
+          <li data-step="3">3. Optimasi</li>
+          <li data-step="4">4. Export</li>
+        </ol>
+
+        <div class="panel" id="panel-import">
+          <h2>Masukkan Link Resourcepack ZIP</h2>
+          <p>Gunakan direct URL file <code>.zip</code> (Dropbox direct, GitHub release, CDN, dll).</p>
+          <div class="form-grid">
+            <label>
+              Link ZIP
+              <input id="url-input" type="text" placeholder="https://example.com/my-pack.zip" />
+            </label>
+            <label>
+              Link proxy CORS (opsional)
+              <input
+                id="cors-prefix"
+                type="text"
+                value=""
+                placeholder="Kosongkan untuk auto proxy fallback"
+              />
+            </label>
+          </div>
+          <div class="actions">
+            <button id="fetch-url" class="btn primary" type="button">Ambil dari Link</button>
+            <button id="load-demo" class="btn ghost" type="button">Muat Demo Pack</button>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-meta">
+              <span id="import-progress-label">Menunggu link...</span>
+              <span id="import-progress-value">0%</span>
+            </div>
+            <progress id="import-progress" max="100" value="0"></progress>
+          </div>
+          <p id="import-status" class="status muted">Belum ada file yang dimuat.</p>
+        </div>
+
+        <div class="panel hidden" id="panel-analysis">
+          <h2>Analisis Resourcepack</h2>
+          <div class="stats" id="stats-grid"></div>
+          <div class="actions">
+            <button id="to-optimization" class="btn primary" type="button">Lanjut ke Optimasi</button>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="panel-optimization">
+          <h2>Pengaturan Optimasi (Sesuai Sistem Repo)</h2>
+          <div class="form-grid">
+            <label>
+              Profil optimasi
+              <select id="profile-mode">
+                <option value="standard">Profile A - Standard Safe</option>
+                <option value="audio">Profile B - Advanced Audio Focus</option>
+              </select>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="remove-shaders" checked />
+              Hapus folder shader (assets/minecraft/shaders) seperti script repo
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="dedupe" checked />
+              Deduplikasi file identik
+            </label>
+            <label>
+              Level kompresi ZIP
+              <input id="compression-level" type="range" min="1" max="9" step="1" value="7" />
+              <span id="compression-label">7</span>
+            </label>
+            <label>
+              Nama output
+              <input id="output-name" type="text" value="resourcepack-optimized" />
+            </label>
+          </div>
+          <div class="actions">
+            <button id="run-optimize" class="btn primary" type="button">Mulai Optimasi</button>
+            <button id="back-analysis" class="btn ghost" type="button">Kembali</button>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-meta">
+              <span id="optimize-progress-label">Menunggu proses optimasi...</span>
+              <span id="optimize-progress-value">0%</span>
+            </div>
+            <progress id="optimize-progress" max="100" value="0"></progress>
+          </div>
+          <p id="optimize-status" class="status muted">Siap untuk optimasi.</p>
+        </div>
+
+        <div class="panel hidden" id="panel-export">
+          <h2>Hasil Export</h2>
+          <div class="stats" id="result-grid"></div>
+          <div class="actions">
+            <button id="download-btn" class="btn primary" type="button">Download Hasil</button>
+            <button id="restart-btn" class="btn ghost" type="button">Optimasi Ulang</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
