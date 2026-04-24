@@ -27,6 +27,14 @@ const fetchButton = document.getElementById('fetch-url');
 const urlInput = document.getElementById('url-input');
 const corsInput = document.getElementById('cors-prefix');
 
+
+const AUTO_PROXY_TEMPLATES = [
+  'https://corsproxy.io/?{url}',
+  'https://api.allorigins.win/raw?url={url}',
+  'https://cors.isomorphic-git.org/{url}',
+];
+
+
 const importProgress = {
   bar: document.getElementById('import-progress'),
   value: document.getElementById('import-progress-value'),
@@ -88,22 +96,32 @@ function normalizeUrl(rawUrl) {
   return hasProtocol ? rawUrl : `https://${rawUrl}`;
 }
 
-function buildCandidateUrls(url, corsPrefix) {
-  const candidates = [];
-
-  if (corsPrefix) {
-    const prefix = corsPrefix.trim();
-
-    if (prefix.includes('{url}')) {
-      candidates.push(prefix.replace('{url}', encodeURIComponent(url)));
-    }
-
-    const slashPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
-    candidates.push(`${slashPrefix}${url}`);
-    candidates.push(`${slashPrefix}${encodeURIComponent(url)}`);
+function buildTemplateCandidates(url, template) {
+  if (!template) {
+    return [];
   }
 
-  candidates.push(url);
+  if (template.includes('{url}')) {
+    return [
+      template.replaceAll('{url}', encodeURIComponent(url)),
+      template.replaceAll('{url}', url),
+    ];
+  }
+
+  const slashTemplate = template.endsWith('/') ? template : `${template}/`;
+  return [`${slashTemplate}${url}`, `${slashTemplate}${encodeURIComponent(url)}`];
+}
+
+function buildCandidateUrls(url, corsPrefix) {
+  const candidates = [url];
+
+  if (corsPrefix.trim()) {
+    candidates.push(...buildTemplateCandidates(url, corsPrefix.trim()));
+  }
+
+  for (const proxyTemplate of AUTO_PROXY_TEMPLATES) {
+    candidates.push(...buildTemplateCandidates(url, proxyTemplate));
+  }
 
   return [...new Set(candidates)];
 }
@@ -362,7 +380,7 @@ function resetAll() {
 async function onFetchUrl() {
   try {
     fetchButton.disabled = true;
-    setStatus(importStatus, 'Mengambil file dari link...', 'muted');
+    setStatus(importStatus, 'Mengambil file dari link... (dengan auto fallback proxy)', 'muted');
     setProgress(importProgress, 1, 'Memulai request...');
 
     await loadFromLink();
