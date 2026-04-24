@@ -96,6 +96,35 @@ function normalizeUrl(rawUrl) {
   return hasProtocol ? rawUrl : `https://${rawUrl}`;
 }
 
+function buildSourceVariants(url) {
+  const variants = [url];
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+
+    if (host.includes('dropbox.com')) {
+      const u1 = new URL(parsed.toString());
+      u1.searchParams.set('dl', '1');
+      variants.push(u1.toString());
+
+      const u2 = new URL(parsed.toString());
+      u2.hostname = 'dl.dropboxusercontent.com';
+      u2.searchParams.set('dl', '1');
+      variants.push(u2.toString());
+
+      const u3 = new URL(parsed.toString());
+      u3.hostname = 'dl.dropboxusercontent.com';
+      u3.searchParams.set('raw', '1');
+      variants.push(u3.toString());
+    }
+  } catch {
+    return variants;
+  }
+
+  return [...new Set(variants)];
+}
+
 function buildTemplateCandidates(url, template) {
   if (!template) {
     return [];
@@ -113,14 +142,19 @@ function buildTemplateCandidates(url, template) {
 }
 
 function buildCandidateUrls(url, corsPrefix) {
-  const candidates = [url];
+  const candidates = [];
+  const sourceVariants = buildSourceVariants(url);
 
-  if (corsPrefix.trim()) {
-    candidates.push(...buildTemplateCandidates(url, corsPrefix.trim()));
-  }
+  for (const sourceUrl of sourceVariants) {
+    candidates.push(sourceUrl);
 
-  for (const proxyTemplate of AUTO_PROXY_TEMPLATES) {
-    candidates.push(...buildTemplateCandidates(url, proxyTemplate));
+    if (corsPrefix.trim()) {
+      candidates.push(...buildTemplateCandidates(sourceUrl, corsPrefix.trim()));
+    }
+
+    for (const proxyTemplate of AUTO_PROXY_TEMPLATES) {
+      candidates.push(...buildTemplateCandidates(sourceUrl, proxyTemplate));
+    }
   }
 
   return [...new Set(candidates)];
@@ -251,7 +285,8 @@ async function loadFromLink() {
     }
   }
 
-  throw new Error(`Semua jalur gagal. Detail: ${errors.join(' | ')}`);
+  console.error('Detail semua jalur gagal:', errors);
+  throw new Error('Semua jalur gagal (CORS/akses ditolak).');
 }
 
 async function loadDemoPack() {
@@ -380,7 +415,7 @@ function resetAll() {
 async function onFetchUrl() {
   try {
     fetchButton.disabled = true;
-    setStatus(importStatus, 'Mengambil file dari link... (dengan auto fallback proxy)', 'muted');
+    setStatus(importStatus, 'Mengambil file dari link...', 'muted');
     setProgress(importProgress, 1, 'Memulai request...');
 
     await loadFromLink();

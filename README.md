@@ -6,11 +6,9 @@ Aplikasi web full client-side untuk optimasi resourcepack Minecraft berbasis **l
 
 - Fix bug tombol **Ambil dari Link** yang terlihat tidak merespon.
 - Saat klik tombol sekarang UI langsung update status (`Memulai request...`) dan tombol sementara di-disable agar tidak double click.
-- Ditambahkan retry jalur link otomatis:
-  - direct URL
-  - custom CORS prefix (opsional)
-  - auto public proxy fallback (`corsproxy.io`, `allorigins`, `isomorphic-git`)
-- Ditambahkan timeout request agar proses tidak menggantung tanpa feedback.
+- Ditambahkan dukungan khusus link Dropbox (konversi otomatis ke direct-download URL).
+- Retry jalur link tetap aktif: direct URL, custom CORS proxy, auto proxy fallback.
+- Timeout request untuk mencegah proses menggantung.
 - Input URL juga bisa jalan dengan tombol **Enter**.
 
 ## Konsep optimasi (mengacu sistem repo)
